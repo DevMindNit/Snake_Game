@@ -1,6 +1,10 @@
 #include <iostream>
-#include <conio.h> // console I/O - kbhit()
-#include <windows.h> // Sleep() function
+#include <ncurses.h> // ncurses library
+#include <cstdlib>    // for rand() and srand()
+#include <ctime>      // for time()
+#include <thread>     // for std::this_thread::sleep_for
+#include <chrono>     // for std::chrono
+#include <vector>     // for std::vector
 
 using namespace std;
 
@@ -13,8 +17,9 @@ int tail_number = 0;
 
 // Snake
 int snake_x, snake_y;
-int snake_tail_x[100], snake_tail_y[100];
-// Fuit
+vector<int> snake_tail_x;  // Use vector to store snake tail positions
+vector<int> snake_tail_y;
+// Fruit
 int fruit_x, fruit_y;
 // Console
 const int width = 50;
@@ -34,93 +39,156 @@ DIRECTION currentDirection;
 void initializeGame()
 {
     currentDirection = STOP;
+    snake_x = width / 2;
+    snake_y = height / 2;
+    fruit_x = rand() % width;
+    fruit_y = rand() % height;
 
+    // Initialize ncurses
+    initscr();             // Start ncurses mode
+    timeout(100);          // Set non-blocking input (timeout 100 ms)
+    cbreak();              // Disable line buffering (get characters immediately)
+    noecho();              // Don't display input characters
+    curs_set(0);           // Hide cursor
+    srand(time(nullptr));  // Seed random number generator
 }
 
 void draw()
 {
-    // Top border
-    for (int i = 0; i < width + 2; i++)
-        cout<<"#";
-    cout<<endl;
+    clear(); // Clear the screen for the new frame
 
+    // Draw the top border
+    for (int i = 0; i < width + 2; i++)
+        mvaddch(0, i, '#');
+    
     for (int i = 0; i < height; i++)
     {
-        // Left border
-        cout<<"#";
+        mvaddch(i + 1, 0, '#'); // Left border
 
         for (int j = 0; j < width; j++)
         {
-            // Drawing snake, fruit and empty spaces
             if (i == snake_y && j == snake_x)
-                cout<<"O"; // Snake head
+                mvaddch(i + 1, j + 1, 'O'); // Snake head
             else if (i == fruit_y && j == fruit_x)
-                cout<<"X"; // Fruit
+                mvaddch(i + 1, j + 1, 'X'); // Fruit
             else
             {
                 bool print_tail = false;
-
-                // Checking for snake tail segments
                 for (int k = 0; k < tail_number; k++)
                 {
-                    if (snake_tail_x[k] ==j && snake_tail_y[k] == i)
+                    if (snake_tail_x[k] == j && snake_tail_y[k] == i)
                     {
-                        cout<<"o"; // Snake tail
+                        mvaddch(i + 1, j + 1, 'o'); // Snake tail
                         print_tail = true;
-                        break; // Exit loop once snake taile segment is found
+                        break;
                     }
                 }
                 if (!print_tail)
-                    cout<<" "; // Empty space
+                    mvaddch(i + 1, j + 1, ' '); // Empty space
             }
-            // Right border
-            if (j == width - 1)
-                cout<<"#";
         }
-        cout<<endl;
-    }
-    // Bottom border
-    for (int i = 0; i< width + 2; i++)
-        cout<<"#";
-    cout<<endl;
 
-    cout<<"Score: "<<score<<endl;
+        mvaddch(i + 1, width + 1, '#'); // Right border
+    }
+
+    // Draw the bottom border
+    for (int i = 0; i < width + 2; i++)
+        mvaddch(height + 1, i, '#');
+
+    // Draw score
+    mvprintw(height + 2, 0, "Score: %d", score);
+
+    refresh(); // Update the screen
 }
 
 void userInput()
 {
-    if(kbhit()) // Check if a key has been pressed on the keyboard without needing to continuously hold down the directional buttons
+    int ch = getch(); // Get user input
+    switch (ch)
     {
-        switch(getch()) // Get character
-        {
-            case 'a':
-                currentDirection = LEFT;
-                break;
-            case 'd':
-                currentDirection = RIGHT;
-                break;
-            case 'w':
-                currentDirection = UP;
-                break;
-            case 's':
-                currentDirection = DOWN;
-                break;
-            case 'k':
-                game_over = true;
-                break;
-        }
+    case 'a':
+        currentDirection = LEFT;
+        break;
+    case 'd':
+        currentDirection = RIGHT;
+        break;
+    case 'w':
+        currentDirection = UP;
+        break;
+    case 's':
+        currentDirection = DOWN;
+        break;
+    case 'k': // Press 'k' to end the game
+        game_over = true;
+        break;
     }
 }
 
 void snakeLogic()
 {
+    int prevX = snake_x;
+    int prevY = snake_y;
+    int prev2X, prev2Y;
+    int tailX, tailY;
 
+    // Move the tail
+    for (int i = 0; i < tail_number; i++)
+    {
+        prev2X = snake_tail_x[i];
+        prev2Y = snake_tail_y[i];
+        snake_tail_x[i] = prevX;
+        snake_tail_y[i] = prevY;
+        prevX = prev2X;
+        prevY = prev2Y;
+    }
+
+    // Move the snake head
+    switch (currentDirection)
+    {
+    case LEFT:
+        snake_x--;
+        break;
+    case RIGHT:
+        snake_x++;
+        break;
+    case UP:
+        snake_y--;
+        break;
+    case DOWN:
+        snake_y++;
+        break;
+    default:
+        break;
+    }
+
+    // If the snake eats the fruit
+    if (snake_x == fruit_x && snake_y == fruit_y)
+    {
+        score += 10;
+        fruit_x = rand() % width;
+        fruit_y = rand() % height;
+
+        // Add a new segment to the snake tail
+        snake_tail_x.push_back(prevX);
+        snake_tail_y.push_back(prevY);
+        tail_number++; // Grow the snake
+    }
+
+    // If the snake hits the boundaries or itself
+    if (snake_x >= width || snake_x < 0 || snake_y >= height || snake_y < 0)
+        game_over = true;
+
+    for (int i = 0; i < tail_number; i++)
+    {
+        if (snake_tail_x[i] == snake_x && snake_tail_y[i] == snake_y)
+        {
+            game_over = true;
+        }
+    }
 }
 
-
-
-int main() {
-
+int main()
+{
     initializeGame();
 
     while (!game_over)
@@ -128,7 +196,14 @@ int main() {
         draw();
         userInput();
         snakeLogic();
-        Sleep(10); // control the speed of the game - milliseconds
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // control the speed of the game
     }
+
+    // End the game
+    mvprintw(height + 3, 0, "Game Over! Final Score: %d", score);
+    refresh();
+    std::this_thread::sleep_for(std::chrono::seconds(3)); // Show final score for 3 seconds
+
+    endwin(); // End ncurses mode
     return 0;
 }
